@@ -40,9 +40,9 @@ När det äntligen var löst körde vi bara kommandot:
 helm install wordpress bitnami/wordpress 
   --set service.type=ClusterIP 
   --set route.enabled=true 
-  --set wordpressUsername=admin 
-  --set wordpressPassword=Admin123! 
-  --set mariadb.auth.rootPassword=Admin123! 
+  --set wordpressUsername=HEMLIGT-HÄR 
+  --set wordpressPassword=HEMLIGT-HÄR 
+  --set mariadb.auth.rootPassword=HEMLIGT-HÄR 
   --set persistence.storageClass=lvms-vg1 `
   --set mariadb.primary.persistence.storageClass=lvms-vg1
 
