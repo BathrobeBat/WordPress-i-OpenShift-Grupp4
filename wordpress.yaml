@@ -1,0 +1,202 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wp-secrets
+type: Opaque
+stringData:
+  WORDPRESS_USERNAME: admin
+  WORDPRESS_PASSWORD: Dev0ps24-Grupp4
+  WORDPRESS_EMAIL: it@example.com
+  WORDPRESS_BLOG_NAME: "Firman AB"
+  MARIADB_ROOT_PASSWORD: Dev0ps24-Grupp4
+  MARIADB_DATABASE: bitnami_wordpress
+  MARIADB_USER: bn_wordpress
+  MARIADB_PASSWORD: Dev0ps24-Grupp4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-data
+spec:
+  storageClassName: lvms-vg1        # behåll/ändra vid behov
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-data
+spec:
+  storageClassName: lvms-vg1        # behåll/ändra vid behov
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mariadb
+          image: docker.io/bitnami/mariadb:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: MARIADB_ROOT_PASSWORD } }
+            - name: MARIADB_DATABASE
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: MARIADB_DATABASE } }
+            - name: MARIADB_USER
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: MARIADB_USER } }
+            - name: MARIADB_PASSWORD
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: MARIADB_PASSWORD } }
+          ports:
+            - name: mysql
+              containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /bitnami/mariadb
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            tcpSocket: { port: 3306 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket: { port: 3306 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mariadb-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+spec:
+  selector:
+    app: mariadb
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wordpress
+          image: docker.io/bitnami/wordpress:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: WORDPRESS_USERNAME
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: WORDPRESS_USERNAME } }
+            - name: WORDPRESS_PASSWORD
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: WORDPRESS_PASSWORD } }
+            - name: WORDPRESS_EMAIL
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: WORDPRESS_EMAIL } }
+            - name: WORDPRESS_BLOG_NAME
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: WORDPRESS_BLOG_NAME } }
+            - name: WORDPRESS_DATABASE_HOST
+              value: mariadb:3306
+            - name: WORDPRESS_DATABASE_USER
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: MARIADB_USER } }
+            - name: WORDPRESS_DATABASE_PASSWORD
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: MARIADB_PASSWORD } }
+            - name: WORDPRESS_DATABASE_NAME
+              valueFrom: { secretKeyRef: { name: wp-secrets, key: MARIADB_DATABASE } }
+            - name: ALLOW_EMPTY_PASSWORD
+              value: "no"
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: wp-content
+              mountPath: /bitnami/wordpress
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+      volumes:
+        - name: wp-content
+          persistentVolumeClaim:
+            claimName: wp-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+spec:
+  selector:
+    app: wordpress
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: wordpress
+spec:
+  to:
+    kind: Service
+    name: wordpress
+  port:
+    targetPort: http
+  tls: null
+  # host: wp.grupp4.apps.<cluster-domain>
